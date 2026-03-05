@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.4.0] - 2026-03-05
+
+### Added
+- Dedicated parsers for translation file formats: SDLXLIFF, XLIFF, memoQ XLIFF, TMX, PO/POT.
+- Source/target toggle for XLIFF/SDLXLIFF counting (default: source segments).
+- Auto-detects source and target languages from file metadata; shown in Note column.
+- Inline XLIFF tags (bpt, ept, ph, it, x) are stripped; text inside formatting tags (g) is preserved.
+- Translation formats now work without Tika — uses built-in XML parser.
+
+### Fixed
+- SDLXLIFF files no longer count metadata, hashes, timestamps, and duplicate segments — only actual translatable text is counted.
+
+### Changed
+- Version bumped to 0.4.0.
+
 ## [0.3.0] - 2026-03-05
 
 ### Added

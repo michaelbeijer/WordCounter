@@ -85,7 +85,7 @@ except Exception:
 
 APP_NAME = "WordCounter"
 APP_AUTHOR = "Michael Beijer"
-APP_VERSION = "0.3.0"
+APP_VERSION = "0.4.0"
 
 
 # ---------------- Tokenisation/stat helpers ----------------
@@ -150,6 +150,9 @@ class Settings:
     # PDF
     pdf_include: bool = True
     pdf_remove_repeating_headers_footers: bool = True
+
+    # Translation files (SDLXLIFF, XLIFF, TMX, PO)
+    xliff_count_target: bool = False  # False = count source, True = count target
 
     # Pages estimate
     words_per_page: int = 330  # common translation estimate; adjustable
@@ -341,6 +344,220 @@ def extract_pdf(path: str, s: Settings) -> Tuple[str, Optional[str]]:
         return "", f"PDF error: {e}"
 
 
+# ---------------- Translation formats (dedicated parsers) ----------------
+import xml.etree.ElementTree as ET
+
+# XLIFF inline tag names that are placeholders (no translatable text inside)
+_XLIFF_SKIP_TAGS = {"bpt", "ept", "ph", "it", "x"}
+
+def _local_tag(elem) -> str:
+    """Return the local tag name (without namespace)."""
+    tag = elem.tag
+    if tag.startswith("{"):
+        return tag[tag.index("}") + 1:]
+    return tag
+
+def _xml_itertext(elem) -> str:
+    """Recursively extract translatable text, skipping XLIFF placeholder tags."""
+    parts = []
+    if elem.text:
+        parts.append(elem.text)
+    for child in elem:
+        ltag = _local_tag(child)
+        if ltag in _XLIFF_SKIP_TAGS:
+            # Skip the tag content but keep the tail (text after the tag)
+            if child.tail:
+                parts.append(child.tail)
+        else:
+            # <g>, <mrk>, <sub>, etc. — recurse to get text inside
+            parts.append(_xml_itertext(child))
+            if child.tail:
+                parts.append(child.tail)
+    return "".join(parts)
+
+def _detect_xliff_ns(root) -> str:
+    """Detect the XLIFF namespace from the root element."""
+    tag = root.tag
+    if tag.startswith("{"):
+        return tag[1:tag.index("}")]
+    return ""
+
+def _xliff_iter(root, ns: str, tag_name: str):
+    """Iterate over elements with the given tag name, namespace-aware."""
+    if ns:
+        return root.iter(f"{{{ns}}}{tag_name}")
+    return root.iter(tag_name)
+
+def _xliff_findall(elem, ns: str, tag_name: str):
+    """Find all children with the given tag name, namespace-aware."""
+    if ns:
+        return elem.findall(f"{{{ns}}}{tag_name}")
+    return elem.findall(tag_name)
+
+def _extract_mrk_segments(elem, ns: str) -> List[str]:
+    """Extract text from <mrk mtype='seg'> children, or fallback to full element text."""
+    mrks = _xliff_findall(elem, ns, "mrk")
+    segments = []
+    if mrks:
+        for mrk in mrks:
+            if mrk.get("mtype") == "seg":
+                text = _xml_itertext(mrk).strip()
+                if text:
+                    segments.append(text)
+    else:
+        text = _xml_itertext(elem).strip()
+        if text:
+            segments.append(text)
+    return segments
+
+def extract_sdlxliff(path: str, count_target: bool = False) -> Tuple[str, Optional[str]]:
+    """Extract source or target segments from SDL Trados .sdlxliff files."""
+    try:
+        tree = ET.parse(path)
+        root = tree.getroot()
+        ns = _detect_xliff_ns(root)
+
+        # Detect languages from <file> element
+        file_elem = next(_xliff_iter(root, ns, "file"), None)
+        src_lang = file_elem.get("source-language", "?") if file_elem is not None else "?"
+        tgt_lang = file_elem.get("target-language", "?") if file_elem is not None else "?"
+        counting = "target" if count_target else "source"
+        lang_label = tgt_lang if count_target else src_lang
+
+        segments = []
+        if count_target:
+            # Extract from <target> elements within <trans-unit>
+            for tu in _xliff_iter(root, ns, "trans-unit"):
+                target = tu.find(f"{{{ns}}}target" if ns else "target")
+                if target is not None:
+                    segments.extend(_extract_mrk_segments(target, ns))
+        else:
+            # Extract from <seg-source> (preferred) or <source>
+            for seg_src in _xliff_iter(root, ns, "seg-source"):
+                segments.extend(_extract_mrk_segments(seg_src, ns))
+            if not segments:
+                for src in _xliff_iter(root, ns, "source"):
+                    segments.extend(_extract_mrk_segments(src, ns))
+
+        if not segments:
+            return "", f"No {counting} segments found in SDLXLIFF"
+        note = f"SDLXLIFF {counting} [{lang_label}]"
+        return "\n".join(segments), note
+    except Exception as e:
+        return "", f"SDLXLIFF error: {e}"
+
+def extract_xliff(path: str, count_target: bool = False) -> Tuple[str, Optional[str]]:
+    """Extract source or target segments from XLIFF (.xliff, .xlf, .mqxliff) files."""
+    try:
+        tree = ET.parse(path)
+        root = tree.getroot()
+        ns = _detect_xliff_ns(root)
+        counting = "target" if count_target else "source"
+
+        # Detect languages
+        file_elem = next(_xliff_iter(root, ns, "file"), None)
+        src_lang = file_elem.get("source-language", "?") if file_elem is not None else "?"
+        tgt_lang = file_elem.get("target-language", "?") if file_elem is not None else "?"
+        lang_label = tgt_lang if count_target else src_lang
+
+        segments = []
+        if count_target:
+            for tu in _xliff_iter(root, ns, "trans-unit"):
+                target = tu.find(f"{{{ns}}}target" if ns else "target")
+                if target is not None:
+                    segments.extend(_extract_mrk_segments(target, ns))
+        else:
+            # Try <seg-source> first, fall back to <source>
+            for seg_src in _xliff_iter(root, ns, "seg-source"):
+                segments.extend(_extract_mrk_segments(seg_src, ns))
+            if not segments:
+                for src in _xliff_iter(root, ns, "source"):
+                    segments.extend(_extract_mrk_segments(src, ns))
+
+        if not segments:
+            return "", f"No {counting} segments found in XLIFF"
+        note = f"XLIFF {counting} [{lang_label}]"
+        return "\n".join(segments), note
+    except Exception as e:
+        return "", f"XLIFF error: {e}"
+
+def extract_tmx(path: str) -> Tuple[str, Optional[str]]:
+    """Extract source segments from TMX files (first language variant per TU)."""
+    try:
+        tree = ET.parse(path)
+        root = tree.getroot()
+        # Detect source language from header
+        header = root.find(".//header")
+        srclang = header.get("srclang", "") if header is not None else ""
+
+        segments = []
+        for tu in root.iter("tu"):
+            tuvs = tu.findall("tuv")
+            source_tuv = None
+            if srclang:
+                # Find TUV matching source language
+                for tuv in tuvs:
+                    lang = tuv.get("{http://www.w3.org/XML/1998/namespace}lang", "") or tuv.get("lang", "")
+                    if lang.lower().startswith(srclang.lower()):
+                        source_tuv = tuv
+                        break
+            if source_tuv is None and tuvs:
+                source_tuv = tuvs[0]  # First TUV = source
+            if source_tuv is not None:
+                seg = source_tuv.find("seg")
+                if seg is not None:
+                    text = _xml_itertext(seg).strip()
+                    if text:
+                        segments.append(text)
+
+        if not segments:
+            return "", "No source segments found in TMX"
+        return "\n".join(segments), None
+    except Exception as e:
+        return "", f"TMX error: {e}"
+
+def extract_po(path: str) -> Tuple[str, Optional[str]]:
+    """Extract source strings (msgid) from PO/POT files."""
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            content = f.read()
+        segments = []
+        # Match msgid entries (possibly multi-line)
+        in_msgid = False
+        current = []
+        for line in content.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("msgid "):
+                in_msgid = True
+                # Extract the string after msgid
+                val = stripped[6:].strip().strip('"')
+                if val:
+                    current.append(val)
+            elif in_msgid and stripped.startswith('"') and stripped.endswith('"'):
+                current.append(stripped[1:-1])
+            else:
+                if in_msgid and current:
+                    text = "".join(current)
+                    if text:  # Skip empty msgid ""
+                        segments.append(text)
+                    current = []
+                in_msgid = False
+        # Flush last
+        if in_msgid and current:
+            text = "".join(current)
+            if text:
+                segments.append(text)
+
+        if not segments:
+            return "", "No source strings found in PO file"
+        return "\n".join(segments), None
+    except Exception as e:
+        return "", f"PO error: {e}"
+
+# Translation format extensions handled by dedicated parsers
+TRANSLATION_EXTS = {".sdlxliff", ".xliff", ".xlf", ".mqxliff", ".tmx", ".po", ".pot"}
+
+
 # ---------------- Tika (universal fallback) ----------------
 TIKA_EXTS = {
     # Legacy Microsoft Office
@@ -388,7 +605,7 @@ def extract_tika(path: str) -> Tuple[str, Optional[str]]:
 
 
 # ---------------- Batch + metrics ----------------
-CORE_EXTS = {".docx", ".pptx", ".xlsx", ".pdf"}
+CORE_EXTS = {".docx", ".pptx", ".xlsx", ".pdf"} | TRANSLATION_EXTS
 
 def get_supported_exts(include_pdfs: bool = True) -> set:
     exts = set(CORE_EXTS)
@@ -432,6 +649,15 @@ def extract_text_by_type(path: str, s: Settings) -> Tuple[str, Optional[str]]:
         return extract_xlsx(path, s)
     if ext == ".pdf":
         return extract_pdf(path, s)
+    # Translation formats (dedicated XML/text parsers — always preferred over Tika)
+    if ext == ".sdlxliff":
+        return extract_sdlxliff(path, count_target=s.xliff_count_target)
+    if ext in {".xliff", ".xlf", ".mqxliff"}:
+        return extract_xliff(path, count_target=s.xliff_count_target)
+    if ext == ".tmx":
+        return extract_tmx(path)
+    if ext in {".po", ".pot"}:
+        return extract_po(path)
     # Tika fallback for all other formats
     if TIKA_OK:
         return extract_tika(path)
@@ -496,6 +722,8 @@ class App(tk.Tk):
         self.pdf_include_var = tk.BooleanVar(value=True)
         self.pdf_strip_repeat_var = tk.BooleanVar(value=True)
 
+        self.xliff_count_target_var = tk.BooleanVar(value=False)
+
         self.words_per_page_var = tk.IntVar(value=330)
 
         # --- Billing vars ---
@@ -517,6 +745,7 @@ class App(tk.Tk):
             self.pptx_slide_text_var, self.pptx_footer_ph_var, self.pptx_notes_var,
             self.xlsx_text_var, self.xlsx_numbers_var, self.xlsx_comments_var, self.xlsx_hidden_sheets_var,
             self.pdf_include_var, self.pdf_strip_repeat_var,
+            self.xliff_count_target_var,
             self.words_per_page_var,
             self.bill_by_var, self.rate_var, self.currency_var, self.tax_var, self.discount_var,
         ):
@@ -543,6 +772,7 @@ class App(tk.Tk):
             "xlsx_hidden_sheets": self.xlsx_hidden_sheets_var.get(),
             "pdf_include": self.pdf_include_var.get(),
             "pdf_strip_repeat": self.pdf_strip_repeat_var.get(),
+            "xliff_count_target": self.xliff_count_target_var.get(),
             "words_per_page": self.words_per_page_var.get(),
             "bill_by": self.bill_by_var.get(),
             "rate": self.rate_var.get(),
@@ -594,6 +824,7 @@ class App(tk.Tk):
         _b("xlsx_hidden_sheets", self.xlsx_hidden_sheets_var)
         _b("pdf_include", self.pdf_include_var)
         _b("pdf_strip_repeat", self.pdf_strip_repeat_var)
+        _b("xliff_count_target", self.xliff_count_target_var)
         _n("words_per_page", self.words_per_page_var)
         _s("bill_by", self.bill_by_var)
         _n("rate", self.rate_var)
@@ -638,6 +869,7 @@ class App(tk.Tk):
             xlsx_include_hidden_sheets=self.xlsx_hidden_sheets_var.get(),
             pdf_include=self.pdf_include_var.get(),
             pdf_remove_repeating_headers_footers=self.pdf_strip_repeat_var.get(),
+            xliff_count_target=self.xliff_count_target_var.get(),
             words_per_page=int(self.words_per_page_var.get() or 330),
         )
 
@@ -715,6 +947,8 @@ class App(tk.Tk):
         ttk.Label(bottom_settings, text="Words per page (estimate):").grid(row=0, column=2, sticky="e", padx=(18, 6))
         ttk.Spinbox(bottom_settings, from_=100, to=1000, textvariable=self.words_per_page_var, width=6)\
             .grid(row=0, column=3, sticky="w")
+        ttk.Checkbutton(bottom_settings, text="XLIFF/SDLXLIFF: count target segments (default: source)",
+                         variable=self.xliff_count_target_var).grid(row=1, column=0, columnspan=3, sticky="w", pady=(4, 0))
 
         settings.columnconfigure(0, weight=1)
         settings.columnconfigure(1, weight=1)
@@ -950,12 +1184,13 @@ class App(tk.Tk):
         self._queue.put(("meta", len(paths)))
 
         for idx, p in enumerate(paths, start=1):
-            text, err = extract_text_by_type(p, s)
-            if err:
-                metrics = FileMetrics(p, 0, 0, 0, 0, 0, 0, 0.0, err)
+            text, note = extract_text_by_type(p, s)
+            if note and not text:
+                # Error: no text could be extracted
+                metrics = FileMetrics(p, 0, 0, 0, 0, 0, 0, 0.0, note)
             else:
                 w, c, cns, n, sent, para, pages = compute_metrics(text, s)
-                metrics = FileMetrics(p, w, c, cns, n, sent, para, pages, "", text)
+                metrics = FileMetrics(p, w, c, cns, n, sent, para, pages, note or "", text)
             self._queue.put(("result", metrics, idx, len(paths)))
 
         self._queue.put(("done",))
