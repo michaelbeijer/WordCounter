@@ -14,6 +14,7 @@ Optional Tika (50+ extra formats, requires Java):
 
 import os
 import re
+import json
 import threading
 import queue
 import csv
@@ -487,8 +488,112 @@ class App(tk.Tk):
         self.tax_var = tk.DoubleVar(value=0.0)       # percent
         self.discount_var = tk.DoubleVar(value=0.0)  # percent
 
+        self._load_settings()
         self._build_ui()
         self._poll_queue()
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+        # Auto-save settings when any variable changes
+        for v in (
+            self.include_subfolders_var,
+            self.docx_body_var, self.docx_tables_var, self.docx_headers_var, self.docx_footers_var,
+            self.pptx_slide_text_var, self.pptx_footer_ph_var, self.pptx_notes_var,
+            self.xlsx_text_var, self.xlsx_numbers_var, self.xlsx_comments_var, self.xlsx_hidden_sheets_var,
+            self.pdf_include_var, self.pdf_strip_repeat_var,
+            self.words_per_page_var,
+            self.bill_by_var, self.rate_var, self.currency_var, self.tax_var, self.discount_var,
+        ):
+            v.trace_add("write", lambda *_: self._save_settings())
+
+    # -------- Settings persistence --------
+    @staticmethod
+    def _settings_file() -> str:
+        return os.path.join(os.path.expanduser("~"), ".wordcounter_settings.json")
+
+    def _save_settings(self):
+        data = {
+            "include_subfolders": self.include_subfolders_var.get(),
+            "docx_body": self.docx_body_var.get(),
+            "docx_tables": self.docx_tables_var.get(),
+            "docx_headers": self.docx_headers_var.get(),
+            "docx_footers": self.docx_footers_var.get(),
+            "pptx_slide_text": self.pptx_slide_text_var.get(),
+            "pptx_footer_ph": self.pptx_footer_ph_var.get(),
+            "pptx_notes": self.pptx_notes_var.get(),
+            "xlsx_text": self.xlsx_text_var.get(),
+            "xlsx_numbers": self.xlsx_numbers_var.get(),
+            "xlsx_comments": self.xlsx_comments_var.get(),
+            "xlsx_hidden_sheets": self.xlsx_hidden_sheets_var.get(),
+            "pdf_include": self.pdf_include_var.get(),
+            "pdf_strip_repeat": self.pdf_strip_repeat_var.get(),
+            "words_per_page": self.words_per_page_var.get(),
+            "bill_by": self.bill_by_var.get(),
+            "rate": self.rate_var.get(),
+            "currency": self.currency_var.get(),
+            "tax": self.tax_var.get(),
+            "discount": self.discount_var.get(),
+            "last_folder": self.folder_var.get(),
+            "geometry": self.geometry(),
+        }
+        try:
+            with open(self._settings_file(), "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+        except Exception:
+            pass  # non-critical
+
+    def _load_settings(self):
+        try:
+            with open(self._settings_file(), "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception:
+            return
+
+        def _b(key, var):
+            if key in data:
+                var.set(bool(data[key]))
+
+        def _s(key, var):
+            if key in data:
+                var.set(str(data[key]))
+
+        def _n(key, var):
+            if key in data:
+                try:
+                    var.set(data[key])
+                except Exception:
+                    pass
+
+        _b("include_subfolders", self.include_subfolders_var)
+        _b("docx_body", self.docx_body_var)
+        _b("docx_tables", self.docx_tables_var)
+        _b("docx_headers", self.docx_headers_var)
+        _b("docx_footers", self.docx_footers_var)
+        _b("pptx_slide_text", self.pptx_slide_text_var)
+        _b("pptx_footer_ph", self.pptx_footer_ph_var)
+        _b("pptx_notes", self.pptx_notes_var)
+        _b("xlsx_text", self.xlsx_text_var)
+        _b("xlsx_numbers", self.xlsx_numbers_var)
+        _b("xlsx_comments", self.xlsx_comments_var)
+        _b("xlsx_hidden_sheets", self.xlsx_hidden_sheets_var)
+        _b("pdf_include", self.pdf_include_var)
+        _b("pdf_strip_repeat", self.pdf_strip_repeat_var)
+        _n("words_per_page", self.words_per_page_var)
+        _s("bill_by", self.bill_by_var)
+        _n("rate", self.rate_var)
+        _s("currency", self.currency_var)
+        _n("tax", self.tax_var)
+        _n("discount", self.discount_var)
+        _s("last_folder", self.folder_var)
+
+        if "geometry" in data:
+            try:
+                self.geometry(data["geometry"])
+            except Exception:
+                pass
+
+    def _on_close(self):
+        self._save_settings()
+        self.destroy()
 
     def _dependency_status(self) -> str:
         bits = [
@@ -676,6 +781,11 @@ class App(tk.Tk):
         # Recompute billing when these change
         for v in (self.bill_by_var, self.rate_var, self.currency_var, self.tax_var, self.discount_var, self.words_per_page_var):
             v.trace_add("write", lambda *_: self.update_billing())
+
+        # Keyboard shortcuts
+        self.bind("<Control-o>", lambda e: self.browse())
+        self.bind("<Control-Return>", lambda e: self.run_count())
+        self.bind("<F5>", lambda e: self.run_count())
 
     # -------- File list management --------
     def _pick_files_dialog(self):
