@@ -2,12 +2,14 @@
 Batch word counter with GUI for translators (FineCount-inspired).
 
 Counts: .docx, .pptx, .xlsx, optional .pdf
-Adds: richer stats columns + billing panel (rate/tax/discount) + add/remove/recount controls
+With optional Apache Tika: 50+ additional formats (.doc, .odt, .html, .epub, .rtf, etc.)
 
 Install:
   pip install python-docx python-pptx openpyxl
 Optional PDF:
   pip install pdfminer.six
+Optional Tika (50+ extra formats, requires Java):
+  pip install tika
 """
 
 import os
@@ -54,9 +56,18 @@ try:
 except Exception:
     PDF_OK = False
 
+TIKA_OK = False
+try:
+    import logging as _logging
+    _logging.getLogger("tika").setLevel(_logging.WARNING)
+    from tika import parser as tika_parser
+    TIKA_OK = True
+except Exception:
+    TIKA_OK = False
+
 APP_NAME = "WordCounter"
 APP_AUTHOR = "Michael Beijer"
-APP_VERSION = "0.1.1"
+APP_VERSION = "0.2.0"
 
 
 # ---------------- Tokenisation/stat helpers ----------------
@@ -312,8 +323,62 @@ def extract_pdf(path: str, s: Settings) -> Tuple[str, Optional[str]]:
         return "", f"PDF error: {e}"
 
 
+# ---------------- Tika (universal fallback) ----------------
+TIKA_EXTS = {
+    # Legacy Microsoft Office
+    ".doc", ".xls", ".ppt",
+    # Rich Text Format
+    ".rtf",
+    # OpenDocument
+    ".odt", ".odp", ".ods", ".odg",
+    # Web / markup
+    ".html", ".htm", ".xhtml", ".xml",
+    # Plain text
+    ".txt", ".csv", ".tsv",
+    # Markup text
+    ".md", ".rst", ".tex", ".latex",
+    # E-books
+    ".epub",
+    # Email
+    ".eml", ".msg",
+    # Translation / localisation
+    ".xliff", ".xlf", ".tmx", ".sdlxliff", ".mqxliff",
+    ".po", ".pot", ".tbx",
+    # Subtitles
+    ".srt", ".vtt", ".ass", ".sub",
+    # Desktop publishing
+    ".idml",
+    # Visio
+    ".vsdx",
+    # Images (OCR — requires Tesseract on the system)
+    ".png", ".jpg", ".jpeg", ".tiff", ".tif", ".bmp", ".gif",
+    # Data formats
+    ".json", ".yaml", ".yml",
+    # Localisation / config
+    ".properties", ".strings", ".resx",
+}
+
+def extract_tika(path: str) -> Tuple[str, Optional[str]]:
+    if not TIKA_OK:
+        return "", "Apache Tika not installed"
+    try:
+        parsed = tika_parser.from_file(path)
+        text = parsed.get("content") or ""
+        return text.strip(), None
+    except Exception as e:
+        return "", f"Tika error: {e}"
+
+
 # ---------------- Batch + metrics ----------------
-SUPPORTED_EXTS = {".docx", ".pptx", ".xlsx", ".pdf"}
+CORE_EXTS = {".docx", ".pptx", ".xlsx", ".pdf"}
+
+def get_supported_exts(include_pdfs: bool = True) -> set:
+    exts = set(CORE_EXTS)
+    if not include_pdfs:
+        exts.discard(".pdf")
+    if TIKA_OK:
+        exts |= TIKA_EXTS
+    return exts
 
 @dataclass
 class FileMetrics:
@@ -340,6 +405,7 @@ def compute_metrics(text: str, s: Settings) -> Tuple[int, int, int, int, int, in
 
 def extract_text_by_type(path: str, s: Settings) -> Tuple[str, Optional[str]]:
     ext = os.path.splitext(path)[1].lower()
+    # Dedicated extractors (with fine-grained settings)
     if ext == ".docx":
         return extract_docx(path, s)
     if ext == ".pptx":
@@ -348,14 +414,15 @@ def extract_text_by_type(path: str, s: Settings) -> Tuple[str, Optional[str]]:
         return extract_xlsx(path, s)
     if ext == ".pdf":
         return extract_pdf(path, s)
+    # Tika fallback for all other formats
+    if TIKA_OK:
+        return extract_tika(path)
     return "", "Unsupported file type"
 
 def iter_files(folder: str, include_subfolders: bool, include_pdfs: bool) -> List[str]:
+    supported = get_supported_exts(include_pdfs)
     def ok_ext(fn: str) -> bool:
-        ext = os.path.splitext(fn)[1].lower()
-        if ext == ".pdf" and not include_pdfs:
-            return False
-        return ext in SUPPORTED_EXTS
+        return os.path.splitext(fn)[1].lower() in supported
 
     paths: List[str] = []
     if include_subfolders:
@@ -371,14 +438,11 @@ def iter_files(folder: str, include_subfolders: bool, include_pdfs: bool) -> Lis
     return sorted(paths)
 
 def filter_supported(files: List[str], include_pdfs: bool) -> List[str]:
+    supported = get_supported_exts(include_pdfs)
     out = []
     for p in files:
-        ext = os.path.splitext(p)[1].lower()
-        if ext not in SUPPORTED_EXTS:
-            continue
-        if ext == ".pdf" and not include_pdfs:
-            continue
-        out.append(p)
+        if os.path.splitext(p)[1].lower() in supported:
+            out.append(p)
     return sorted(list(dict.fromkeys(out)))  # de-dupe preserve order
 
 
@@ -432,6 +496,7 @@ class App(tk.Tk):
             f"PPTX: {'OK' if PPTX_OK else 'missing'}",
             f"XLSX: {'OK' if XLSX_OK else 'missing'}",
             f"PDF: {'OK' if PDF_OK else 'missing (optional)'}",
+            f"Tika: {'OK (+{0} formats)'.format(len(TIKA_EXTS)) if TIKA_OK else 'not installed (optional)'}",
         ]
         return f"v{APP_VERSION} • " + " • ".join(bits)
 
@@ -614,17 +679,30 @@ class App(tk.Tk):
 
     # -------- File list management --------
     def _pick_files_dialog(self):
-        return filedialog.askopenfilenames(
-            title="Select files",
-            filetypes=[
+        if TIKA_OK:
+            all_exts = " ".join(f"*{e}" for e in sorted(get_supported_exts()))
+            types = [
+                ("All supported", all_exts),
+                ("Microsoft Office", "*.docx *.doc *.pptx *.ppt *.xlsx *.xls"),
+                ("OpenDocument", "*.odt *.odp *.ods"),
+                ("PDF", "*.pdf"),
+                ("Text / Markup", "*.txt *.html *.htm *.xml *.md *.rst *.csv *.rtf"),
+                ("Translation / L10n", "*.xliff *.xlf *.tmx *.sdlxliff *.mqxliff *.po *.pot *.tbx"),
+                ("Subtitles", "*.srt *.vtt *.ass *.sub"),
+                ("E-books", "*.epub"),
+                ("Images (OCR)", "*.png *.jpg *.jpeg *.tiff *.tif *.bmp *.gif"),
+                ("All files", "*.*"),
+            ]
+        else:
+            types = [
                 ("Supported", "*.docx *.pptx *.xlsx *.pdf"),
                 ("Word", "*.docx"),
                 ("PowerPoint", "*.pptx"),
                 ("Excel", "*.xlsx"),
                 ("PDF", "*.pdf"),
                 ("All files", "*.*"),
-            ],
-        )
+            ]
+        return filedialog.askopenfilenames(title="Select files", filetypes=types)
 
     def browse(self):
         dlg = tk.Toplevel(self)

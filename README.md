@@ -16,15 +16,14 @@ Translators often need reliable counts across multiple file types, but many tool
 
 ## Current version
 
-`0.1.1`
+`0.2.0`
 
 ## What WordCounter does
 
 - Batch counts supported files:
-  - `.docx`
-  - `.pptx`
-  - `.xlsx`
-  - `.pdf` (optional dependency)
+  - `.docx`, `.pptx`, `.xlsx` (core)
+  - `.pdf` (optional — requires `pdfminer.six`)
+  - With optional [Apache Tika](https://tika.apache.org/): **50+ additional formats** including `.doc`, `.xls`, `.ppt`, `.rtf`, `.odt`, `.odp`, `.ods`, `.html`, `.xml`, `.txt`, `.epub`, `.srt`, `.xliff`, `.tmx`, `.po`, images (OCR), and many more
 - Calculates per-file metrics:
   - Words
   - Characters
@@ -62,6 +61,18 @@ pip install python-docx python-pptx openpyxl pdfminer.six
 
 `pdfminer.six` is optional if you do not need PDF support.
 
+### Optional: Apache Tika (50+ extra formats)
+
+Tika unlocks support for legacy Office (.doc, .xls, .ppt), OpenDocument, RTF, HTML, EPUB, subtitles, translation formats (XLIFF, TMX, PO), and more — including OCR for images if [Tesseract](https://github.com/tesseract-ocr/tesseract) is installed.
+
+**Requires Java (JRE 8+).** On first run, `tika-python` downloads the Tika server JAR (~70 MB).
+
+```bash
+pip install tika
+```
+
+Without Tika, WordCounter still works for .docx, .pptx, .xlsx, and .pdf.
+
 ## Run
 
 From the project root:
@@ -84,11 +95,11 @@ WordCounter aims to be a free, open-source replacement for commercial word count
 
 | Tool | Price | Platform | Formats | Invoicing | Status | Notes |
 |------|-------|----------|---------|-----------|--------|-------|
-| **WordCounter** | Free (MIT) | Windows, macOS, Linux | .docx, .pptx, .xlsx, .pdf | Billing panel (rate/tax/discount) | Active | Open source, lightweight, cross-platform via Python |
-| **AnyCount** | EUR 89-399/yr or EUR 199-399 perpetual | Windows only | 70+ formats incl. OCR, CAT files, URLs | No (separate via TO3000) | Active | Most feature-rich; expensive; heavy (6 GB RAM) |
-| **PractiCount** | ~USD 60 one-time | Windows only | 20+ formats | Yes, built-in with client DB | Low activity | Good value; dated UI; last major update references Office 2016 |
-| **FineCount** | EUR 39/yr subscription | Windows only | ~15 formats | Basic quoting/invoicing | Maintenance mode | No major version update since 2018; subscription-only |
-| **CountAnything** | Free | Windows only | ~12 formats | No | Dormant | Freeware but not open source; bare-bones; tiny user base |
+| **[WordCounter](https://github.com/michaelbeijer/WordCounter)** | Free (MIT) | Windows, macOS, Linux | 4 core + 50 via Tika | Billing panel (rate/tax/discount) | Active | Open source, lightweight, cross-platform via Python |
+| **[AnyCount](https://www.anycount.com/)** | EUR 89-399/yr or EUR 199-399 perpetual | Windows only | 70+ formats incl. OCR, CAT files, URLs | No (separate via TO3000) | Active | Most feature-rich; expensive; heavy (6 GB RAM) |
+| **[PractiCount](https://practiline.com/)** | ~USD 60 one-time | Windows only | 20+ formats | Yes, built-in with client DB | Low activity | Good value; dated UI; last major update references Office 2016 |
+| **[FineCount](https://www.finecount.eu/)** | EUR 39/yr subscription | Windows only | ~15 formats | Basic quoting/invoicing | Maintenance mode | No major version update since 2018; subscription-only |
+| **[CountAnything](https://ginstrom.com/CountAnything/)** | Free | Windows only | ~12 formats | No | Dormant | Freeware but not open source; bare-bones; tiny user base |
 
 **Key differences:**
 
