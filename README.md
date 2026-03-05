@@ -92,4 +92,4 @@ If you are a translator, your real-world feedback is especially valuable.
 
 ## License
 
-Open source. Add your preferred license file (for example MIT) to finalize licensing.
+This project is licensed under the MIT License. See the LICENSE file for details.

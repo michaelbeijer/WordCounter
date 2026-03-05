@@ -54,9 +54,9 @@ try:
 except Exception:
     PDF_OK = False
 
-    APP_NAME = "WordCounter"
-    APP_AUTHOR = "Michael Beijer"
-    APP_VERSION = "0.1.0"
+APP_NAME = "WordCounter"
+APP_AUTHOR = "Michael Beijer"
+APP_VERSION = "0.1.0"
 
 
 # ---------------- Tokenisation/stat helpers ----------------
