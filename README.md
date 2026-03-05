@@ -16,7 +16,7 @@ Translators often need reliable counts across multiple file types, but many tool
 
 ## Current version
 
-`0.2.0`
+`0.3.0`
 
 ## What WordCounter does
 

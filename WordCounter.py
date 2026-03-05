@@ -13,6 +13,7 @@ Optional Tika (50+ extra formats, requires Java):
 """
 
 import os
+import sys
 import re
 import json
 import threading
@@ -21,6 +22,22 @@ import csv
 from datetime import datetime
 from dataclasses import dataclass
 from typing import List, Optional, Tuple, Dict
+
+# --- Bundled JRE + Tika JAR detection (for PyInstaller frozen builds) ---
+def _setup_bundled_tika():
+    """Configure tika-python to use the JRE and Tika JAR bundled with the EXE."""
+    if not getattr(sys, 'frozen', False):
+        return
+    # _MEIPASS points to _internal/ in onedir mode
+    bundle_dir = sys._MEIPASS
+    java_exe = os.path.join(bundle_dir, 'jre', 'bin', 'java.exe')
+    tika_jar = os.path.join(bundle_dir, 'tika', 'tika-server-standard-3.1.0.jar')
+    if os.path.isfile(java_exe):
+        os.environ['TIKA_JAVA'] = java_exe
+    if os.path.isfile(tika_jar):
+        os.environ['TIKA_SERVER_JAR'] = 'file:///' + tika_jar.replace('\\', '/')
+
+_setup_bundled_tika()
 
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
@@ -68,7 +85,7 @@ except Exception:
 
 APP_NAME = "WordCounter"
 APP_AUTHOR = "Michael Beijer"
-APP_VERSION = "0.2.0"
+APP_VERSION = "0.3.0"
 
 
 # ---------------- Tokenisation/stat helpers ----------------
