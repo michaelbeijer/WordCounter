@@ -54,6 +54,10 @@ try:
 except Exception:
     PDF_OK = False
 
+    APP_NAME = "WordCounter"
+    APP_AUTHOR = "Michael Beijer"
+    APP_VERSION = "0.1.0"
+
 
 # ---------------- Tokenisation/stat helpers ----------------
 WORD_RE = re.compile(r"[A-Za-zÀ-ÖØ-öø-ÿ0-9]+(?:['’][A-Za-zÀ-ÖØ-öø-ÿ0-9]+)?")
@@ -381,7 +385,7 @@ def filter_supported(files: List[str], include_pdfs: bool) -> List[str]:
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("WordCounter, by Michael Beijer")
+        self.title(f"{APP_NAME}, by {APP_AUTHOR}")
         self.geometry("1200x760")
 
         self.folder_var = tk.StringVar(value="")
@@ -428,7 +432,7 @@ class App(tk.Tk):
             f"XLSX: {'OK' if XLSX_OK else 'missing'}",
             f"PDF: {'OK' if PDF_OK else 'missing (optional)'}",
         ]
-        return " • ".join(bits)
+        return f"v{APP_VERSION} • " + " • ".join(bits)
 
     def _get_settings(self) -> Settings:
         return Settings(
@@ -891,7 +895,7 @@ class App(tk.Tk):
         total = subtotal_after_discount * (1.0 + (tax / 100.0))
 
         lines = [
-            "WordCounter - Count Report",
+            f"{APP_NAME} v{APP_VERSION} - Count Report",
             f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
             "",
             header,
