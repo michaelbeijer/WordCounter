@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.1.1] - 2026-03-05
+
+### Fixed
+- Resolved Windows EXE startup crash (`name 'APP_NAME' is not defined`) by defining app metadata constants at module scope.
+
+### Changed
+- Added MIT license to the repository.
+- Added release-oriented project metadata updates (`README`, `VERSION`).
+
 ## [0.1.0] - 2026-03-05
 
 ### Added

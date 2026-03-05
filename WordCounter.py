@@ -56,7 +56,7 @@ except Exception:
 
 APP_NAME = "WordCounter"
 APP_AUTHOR = "Michael Beijer"
-APP_VERSION = "0.1.0"
+APP_VERSION = "0.1.1"
 
 
 # ---------------- Tokenisation/stat helpers ----------------
