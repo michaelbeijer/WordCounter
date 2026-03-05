@@ -49,7 +49,11 @@ Translators often need reliable counts across multiple file types, but many tool
 - `Count` runs counts directly from selected files or the selected folder.
 - `Add files…`, `Remove selected`, and `Remove all` support quick list refinement.
 
-## Install
+## Download
+
+**Windows 64-bit**: Download the latest release from the [Releases page](https://github.com/michaelbeijer/WordCounter/releases). Extract the ZIP anywhere and run `WordCounter.exe`. No Java, Python, or other dependencies required — the JRE and Apache Tika are bundled.
+
+## Install (from source)
 
 Requires Python 3.10+ (3.12 tested).
 
