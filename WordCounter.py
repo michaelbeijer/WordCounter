@@ -326,6 +326,7 @@ class FileMetrics:
     paragraphs: int
     pages_est: float
     note: str = ""
+    text: str = ""
 
 def compute_metrics(text: str, s: Settings) -> Tuple[int, int, int, int, int, int, float]:
     w = count_words(text)
@@ -472,13 +473,16 @@ class App(tk.Tk):
         self.export_btn = ttk.Button(top, text="Export CSV…", command=self.export_csv, state="disabled")
         self.export_btn.grid(row=0, column=4, padx=(8, 0))
 
+        self.export_md_btn = ttk.Button(top, text="Export MD…", command=self.export_md, state="disabled")
+        self.export_md_btn.grid(row=0, column=5, padx=(8, 0))
+
         self.copy_btn = ttk.Button(top, text="Copy report", command=self.copy_report, state="disabled")
-        self.copy_btn.grid(row=0, column=5, padx=(8, 0))
+        self.copy_btn.grid(row=0, column=6, padx=(8, 0))
 
         top.columnconfigure(1, weight=1)
 
         ttk.Checkbutton(top, text="Include subfolders (for folder counts)", variable=self.include_subfolders_var)\
-            .grid(row=1, column=4, columnspan=2, sticky="w", padx=(12, 0), pady=(6, 0))
+            .grid(row=1, column=4, columnspan=3, sticky="w", padx=(12, 0), pady=(6, 0))
 
         # Settings + Billing panel
         mid = ttk.Frame(self, padding=(10, 0, 10, 6))
@@ -623,18 +627,21 @@ class App(tk.Tk):
         )
 
     def browse(self):
-        choice = messagebox.askyesnocancel(
-            "Browse",
-            "Select individual files?\n\n"
-            "Yes = files\n"
-            "No = folder\n"
-            "Cancel = do nothing"
-        )
-        if choice is None:
-            return
+        dlg = tk.Toplevel(self)
+        dlg.title("Browse")
+        dlg.resizable(False, False)
+        dlg.grab_set()
+        dlg.geometry(f"+{self.winfo_rootx() + 150}+{self.winfo_rooty() + 80}")
 
-        s = self._get_settings()
-        if choice:
+        frame = ttk.Frame(dlg, padding=20)
+        frame.pack()
+
+        ttk.Label(frame, text="What would you like to select?",
+                  font=("Segoe UI", 10)).pack(pady=(0, 14))
+
+        def pick_files():
+            dlg.destroy()
+            s = self._get_settings()
             files = self._pick_files_dialog()
             if files:
                 self._file_list = filter_supported(list(files), include_pdfs=s.pdf_include)
@@ -642,13 +649,21 @@ class App(tk.Tk):
                     first_dir = os.path.dirname(self._file_list[0])
                     self.folder_var.set(first_dir)
                 self.status_var.set(f"Selected {len(self._file_list)} file(s). Click Count.")
-            return
 
-        folder = filedialog.askdirectory(title="Choose a folder")
-        if folder:
-            self.folder_var.set(folder)
-            self._file_list = []
-            self.status_var.set("Folder selected. Click Count.")
+        def pick_folder():
+            dlg.destroy()
+            folder = filedialog.askdirectory(title="Choose a folder")
+            if folder:
+                self.folder_var.set(folder)
+                self._file_list = []
+                self.status_var.set("Folder selected. Click Count.")
+
+        btn_frame = ttk.Frame(frame)
+        btn_frame.pack(fill="x")
+        ttk.Button(btn_frame, text="Select Files…", command=pick_files).pack(fill="x", pady=(0, 6))
+        ttk.Button(btn_frame, text="Select Folder…", command=pick_folder).pack(fill="x")
+
+        dlg.wait_window()
 
     def add_folder(self):
         folder = self.folder_var.get().strip()
@@ -689,6 +704,7 @@ class App(tk.Tk):
             self.tree.delete(item)
         self._results = []
         self.export_btn.configure(state="disabled")
+        self.export_md_btn.configure(state="disabled")
         self.copy_btn.configure(state="disabled")
         self.total_files_var.set("Files: 0")
         self.total_words_var.set("Total words: 0")
@@ -716,6 +732,7 @@ class App(tk.Tk):
             self.tree.delete(item)
         self._results = []
         self.export_btn.configure(state="disabled")
+        self.export_md_btn.configure(state="disabled")
         self.copy_btn.configure(state="disabled")
 
         self.run_btn.configure(state="disabled")
@@ -733,7 +750,7 @@ class App(tk.Tk):
                 metrics = FileMetrics(p, 0, 0, 0, 0, 0, 0, 0.0, err)
             else:
                 w, c, cns, n, sent, para, pages = compute_metrics(text, s)
-                metrics = FileMetrics(p, w, c, cns, n, sent, para, pages, "")
+                metrics = FileMetrics(p, w, c, cns, n, sent, para, pages, "", text)
             self._queue.put(("result", metrics, idx, len(paths)))
 
         self._queue.put(("done",))
@@ -782,8 +799,10 @@ class App(tk.Tk):
                 elif kind == "done":
                     self.status_var.set(f"Done. {len(self._results)} file(s).")
                     self.run_btn.configure(state="normal")
-                    self.export_btn.configure(state=("normal" if self._results else "disabled"))
-                    self.copy_btn.configure(state=("normal" if self._results else "disabled"))
+                    has = "normal" if self._results else "disabled"
+                    self.export_btn.configure(state=has)
+                    self.export_md_btn.configure(state=has)
+                    self.copy_btn.configure(state=has)
                     self.update_billing()
 
         except queue.Empty:
@@ -908,7 +927,22 @@ class App(tk.Tk):
             f"Total pages (est.): {total_pages:.2f}",
             f"Billing: {bill_by} | Rate {currency} {rate:.4f} | Discount {discount:.2f}% | Tax {tax:.2f}%",
             f"Total amount: {currency} {total:.2f}",
+            "",
+            "=" * 60,
+            "DOCUMENT CONTENTS",
+            "=" * 60,
         ]
+
+        for r in self._results:
+            fname = os.path.basename(r.filepath)
+            lines.append("")
+            lines.append(f"--- {fname} ---")
+            lines.append("")
+            if r.text and r.text.strip():
+                lines.append(r.text.strip())
+            else:
+                lines.append(f"[{r.note or 'No text extracted'}]")
+
         return "\n".join(lines)
 
     def copy_report(self):
@@ -951,6 +985,99 @@ class App(tk.Tk):
                 total_pages = sum(r.pages_est for r in self._results)
                 w.writerow(["TOTALS", total_words, total_chars, "", "", "", "", f"{total_pages:.2f}", ""])
 
+            messagebox.showinfo("Exported", f"Saved:\n{out}")
+        except Exception as e:
+            messagebox.showerror("Export failed", str(e))
+
+    def _format_markdown_report(self) -> str:
+        if not self._results:
+            return ""
+
+        total_words = sum(r.words for r in self._results)
+        total_chars = sum(r.chars for r in self._results)
+        total_pages = sum(r.pages_est for r in self._results)
+
+        bill_by = self.bill_by_var.get()
+        if bill_by == "Words":
+            units = sum(r.words for r in self._results)
+        elif bill_by == "Characters":
+            units = sum(r.chars for r in self._results)
+        else:
+            units = sum(r.pages_est for r in self._results)
+
+        rate = float(self.rate_var.get() or 0.0)
+        tax = float(self.tax_var.get() or 0.0)
+        discount = float(self.discount_var.get() or 0.0)
+        currency = (self.currency_var.get() or "").strip() or "GBP"
+        subtotal = units * rate
+        subtotal_after_discount = subtotal * (1.0 - (discount / 100.0))
+        total = subtotal_after_discount * (1.0 + (tax / 100.0))
+
+        lines = [
+            f"# {APP_NAME} v{APP_VERSION} - Count Report",
+            f"",
+            f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+            f"",
+            f"## Summary",
+            f"",
+            f"| File | Words | Chars | Chars (no sp) | Numbers | % nums | Sent. | Para. | Pages (est.) | Note |",
+            f"|------|------:|------:|--------------:|--------:|-------:|------:|------:|-------------:|------|",
+        ]
+
+        for r in self._results:
+            nums_pct = (r.numbers / r.words * 100.0) if r.words else 0.0
+            fname = os.path.basename(r.filepath)
+            lines.append(
+                f"| {fname} | {r.words} | {r.chars} | {r.chars_nospace} "
+                f"| {r.numbers} | {nums_pct:.2f}% | {r.sentences} | {r.paragraphs} "
+                f"| {r.pages_est:.2f} | {r.note} |"
+            )
+
+        lines.extend([
+            f"",
+            f"**Files:** {len(self._results)}  ",
+            f"**Total words:** {total_words}  ",
+            f"**Total chars:** {total_chars}  ",
+            f"**Total pages (est.):** {total_pages:.2f}",
+            f"",
+            f"### Billing",
+            f"",
+            f"- Bill by: {bill_by} | Rate: {currency} {rate:.4f} | Discount: {discount:.2f}% | Tax: {tax:.2f}%",
+            f"- **Total amount: {currency} {total:.2f}**",
+            f"",
+            f"---",
+            f"",
+            f"## Document Contents",
+            f"",
+        ])
+
+        for r in self._results:
+            fname = os.path.basename(r.filepath)
+            lines.append(f"### {fname}")
+            lines.append(f"")
+            if r.text and r.text.strip():
+                lines.append(r.text.strip())
+            else:
+                lines.append(f"*{r.note or 'No text extracted'}*")
+            lines.append(f"")
+
+        return "\n".join(lines)
+
+    def export_md(self):
+        if not self._results:
+            return
+        out = filedialog.asksaveasfilename(
+            title="Save Markdown report",
+            defaultextension=".md",
+            filetypes=[("Markdown files", "*.md"), ("All files", "*.*")],
+        )
+        if not out:
+            return
+
+        try:
+            report = self._format_markdown_report()
+            with open(out, "w", encoding="utf-8") as f:
+                f.write(report)
             messagebox.showinfo("Exported", f"Saved:\n{out}")
         except Exception as e:
             messagebox.showerror("Export failed", str(e))
