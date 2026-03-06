@@ -85,7 +85,7 @@ except Exception:
 
 APP_NAME = "WordCounter"
 APP_AUTHOR = "Michael Beijer"
-APP_VERSION = "0.4.0"
+APP_VERSION = "0.5.0"
 
 
 # ---------------- Tokenisation/stat helpers ----------------
@@ -694,7 +694,7 @@ def filter_supported(files: List[str], include_pdfs: bool) -> List[str]:
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title(f"{APP_NAME}, by {APP_AUTHOR}")
+        self.title(f"{APP_NAME} v{APP_VERSION}, by {APP_AUTHOR}")
         self.geometry("1200x760")
 
         self.folder_var = tk.StringVar(value="")
@@ -839,6 +839,39 @@ class App(tk.Tk):
             except Exception:
                 pass
 
+    def show_about(self):
+        dlg = tk.Toplevel(self)
+        dlg.title(f"About {APP_NAME}")
+        dlg.resizable(False, False)
+        dlg.grab_set()
+        dlg.geometry(f"+{self.winfo_rootx() + 200}+{self.winfo_rooty() + 120}")
+
+        frame = ttk.Frame(dlg, padding=24)
+        frame.pack()
+
+        ttk.Label(frame, text=f"{APP_NAME} v{APP_VERSION}",
+                  font=("Segoe UI", 14, "bold")).pack(pady=(0, 8))
+        ttk.Label(frame, text=f"by {APP_AUTHOR}").pack()
+
+        # Clickable website link
+        website_label = tk.Label(frame, text="michaelbeijer.co.uk",
+                                 fg="blue", cursor="hand2", font=("Segoe UI", 9, "underline"))
+        website_label.pack(pady=(2, 8))
+        website_label.bind("<Button-1>", lambda e: __import__("webbrowser").open("https://michaelbeijer.co.uk/"))
+
+        ttk.Separator(frame).pack(fill="x", pady=8)
+
+        ttk.Label(frame, text="A batch word counter for translators.",
+                  wraplength=300).pack(pady=(0, 8))
+
+        # Clickable repo link
+        repo_label = tk.Label(frame, text="GitHub: michaelbeijer/WordCounter",
+                              fg="blue", cursor="hand2", font=("Segoe UI", 9, "underline"))
+        repo_label.pack(pady=(0, 12))
+        repo_label.bind("<Button-1>", lambda e: __import__("webbrowser").open("https://github.com/michaelbeijer/WordCounter"))
+
+        ttk.Button(frame, text="Close", command=dlg.destroy).pack()
+
     def _on_close(self):
         self._save_settings()
         self.destroy()
@@ -897,6 +930,8 @@ class App(tk.Tk):
 
         self.copy_btn = ttk.Button(top, text="Copy report", command=self.copy_report, state="disabled")
         self.copy_btn.grid(row=0, column=6, padx=(8, 0))
+
+        ttk.Button(top, text="About", command=self.show_about).grid(row=0, column=7, padx=(8, 0))
 
         top.columnconfigure(1, weight=1)
 

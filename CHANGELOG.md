@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.5.0] - 2026-03-06
+
+### Added
+- About dialog with version info, author name, clickable website link, and GitHub repository link.
+- Version number now shown in the window title bar.
+
+### Changed
+- Version bumped to 0.5.0.
+
 ## [0.4.0] - 2026-03-05
 
 ### Added
