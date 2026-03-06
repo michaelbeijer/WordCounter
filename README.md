@@ -16,7 +16,7 @@ Translators often need reliable counts across multiple file types, but many tool
 
 ## Current version
 
-`0.5.0`
+`0.6.0`
 
 ## What WordCounter does
 
@@ -33,8 +33,14 @@ Translators often need reliable counts across multiple file types, but many tool
   - Sentences
   - Paragraphs
   - Estimated pages
+- Cross-document repetition analysis:
+  - Detects identical segments repeated across all files in a batch
+  - First occurrence = unique (full rate), subsequent = repetitions (reduced/zero rate)
+  - Per-file and total breakdown of unique vs repeated words
+  - Translation formats use native segments; other formats use sentence splitting
 - Includes billing panel:
   - Bill by words, characters, or estimated pages
+  - Separate rate for unique content and repetitions (rep. rate = 0 to exclude)
   - Rate, currency, discount, tax
   - Running total amount
 - Exports results:
@@ -116,7 +122,7 @@ WordCounter aims to be a free, open-source replacement for commercial word count
 
 ## Roadmap ideas
 
-- Match-count categories (repetitions / fuzzy bands)
+- Fuzzy match bands (e.g. 75-99% similarity) for near-repetitions
 - Better PDF structure extraction and cleanup
 - Persist user profiles and presets
 - Cross-platform packaged binaries

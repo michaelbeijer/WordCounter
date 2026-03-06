@@ -11,6 +11,7 @@ Optional PDF:
 Optional Tika (50+ extra formats, requires Java):
   pip install tika
 """
+from __future__ import annotations
 
 import os
 import sys
@@ -85,7 +86,7 @@ except Exception:
 
 APP_NAME = "WordCounter"
 APP_AUTHOR = "Michael Beijer"
-APP_VERSION = "0.5.0"
+APP_VERSION = "0.6.0"
 
 
 # ---------------- Tokenisation/stat helpers ----------------
@@ -123,6 +124,21 @@ def count_paragraphs(text: str) -> int:
         return 0
     blocks = re.split(r"\n\s*\n+", t)
     return sum(1 for b in blocks if b.strip())
+
+
+# ---------------- Segment helpers (for repetition analysis) ----------------
+SENTENCE_SPLIT_RE = re.compile(r'(?<=[.!?])\s+')
+
+def normalize_segment(seg: str) -> str:
+    """Normalize a segment for repetition comparison: collapse whitespace, strip."""
+    return re.sub(r'\s+', ' ', seg.strip())
+
+def text_to_sentences(text: str) -> List[str]:
+    """Split text into sentence segments for repetition analysis (non-translation formats)."""
+    if not text or not text.strip():
+        return []
+    sentences = SENTENCE_SPLIT_RE.split(text.strip())
+    return [s.strip() for s in sentences if s.strip()]
 
 
 # ---------------- Settings ----------------
@@ -190,13 +206,13 @@ def docx_text(path: str, s: Settings) -> str:
 
     return safe_join_text(parts)
 
-def extract_docx(path: str, s: Settings) -> Tuple[str, Optional[str]]:
+def extract_docx(path: str, s: Settings) -> ExtractionResult:
     if not DOCX_OK:
-        return "", "python-docx not installed"
+        return ExtractionResult("", "python-docx not installed")
     try:
-        return docx_text(path, s), None
+        return ExtractionResult(docx_text(path, s), None)
     except Exception as e:
-        return "", f"DOCX error: {e}"
+        return ExtractionResult("", f"DOCX error: {e}")
 
 
 # ---------------- PPTX ----------------
@@ -249,13 +265,13 @@ def pptx_text(path: str, s: Settings) -> str:
 
     return safe_join_text(parts)
 
-def extract_pptx(path: str, s: Settings) -> Tuple[str, Optional[str]]:
+def extract_pptx(path: str, s: Settings) -> ExtractionResult:
     if not PPTX_OK:
-        return "", "python-pptx not installed"
+        return ExtractionResult("", "python-pptx not installed")
     try:
-        return pptx_text(path, s), None
+        return ExtractionResult(pptx_text(path, s), None)
     except Exception as e:
-        return "", f"PPTX error: {e}"
+        return ExtractionResult("", f"PPTX error: {e}")
 
 
 # ---------------- XLSX ----------------
@@ -287,13 +303,13 @@ def xlsx_text(path: str, s: Settings) -> str:
 
     return safe_join_text(parts)
 
-def extract_xlsx(path: str, s: Settings) -> Tuple[str, Optional[str]]:
+def extract_xlsx(path: str, s: Settings) -> ExtractionResult:
     if not XLSX_OK:
-        return "", "openpyxl not installed"
+        return ExtractionResult("", "openpyxl not installed")
     try:
-        return xlsx_text(path, s), None
+        return ExtractionResult(xlsx_text(path, s), None)
     except Exception as e:
-        return "", f"XLSX error: {e}"
+        return ExtractionResult("", f"XLSX error: {e}")
 
 
 # ---------------- PDF ----------------
@@ -330,18 +346,18 @@ def _remove_repeating_lines(text: str) -> str:
 
     return "\n".join(cleaned_pages)
 
-def extract_pdf(path: str, s: Settings) -> Tuple[str, Optional[str]]:
+def extract_pdf(path: str, s: Settings) -> ExtractionResult:
     if not s.pdf_include:
-        return "", "PDF disabled"
+        return ExtractionResult("", "PDF disabled")
     if not PDF_OK:
-        return "", "pdfminer.six not installed (PDF skipped)"
+        return ExtractionResult("", "pdfminer.six not installed (PDF skipped)")
     try:
         text = pdf_extract_text(path) or ""
         if s.pdf_remove_repeating_headers_footers:
             text = _remove_repeating_lines(text)
-        return text, None
+        return ExtractionResult(text, None)
     except Exception as e:
-        return "", f"PDF error: {e}"
+        return ExtractionResult("", f"PDF error: {e}")
 
 
 # ---------------- Translation formats (dedicated parsers) ----------------
@@ -410,7 +426,7 @@ def _extract_mrk_segments(elem, ns: str) -> List[str]:
             segments.append(text)
     return segments
 
-def extract_sdlxliff(path: str, count_target: bool = False) -> Tuple[str, Optional[str]]:
+def extract_sdlxliff(path: str, count_target: bool = False) -> ExtractionResult:
     """Extract source or target segments from SDL Trados .sdlxliff files."""
     try:
         tree = ET.parse(path)
@@ -440,13 +456,13 @@ def extract_sdlxliff(path: str, count_target: bool = False) -> Tuple[str, Option
                     segments.extend(_extract_mrk_segments(src, ns))
 
         if not segments:
-            return "", f"No {counting} segments found in SDLXLIFF"
+            return ExtractionResult("", f"No {counting} segments found in SDLXLIFF")
         note = f"SDLXLIFF {counting} [{lang_label}]"
-        return "\n".join(segments), note
+        return ExtractionResult("\n".join(segments), note, segments)
     except Exception as e:
-        return "", f"SDLXLIFF error: {e}"
+        return ExtractionResult("", f"SDLXLIFF error: {e}")
 
-def extract_xliff(path: str, count_target: bool = False) -> Tuple[str, Optional[str]]:
+def extract_xliff(path: str, count_target: bool = False) -> ExtractionResult:
     """Extract source or target segments from XLIFF (.xliff, .xlf, .mqxliff) files."""
     try:
         tree = ET.parse(path)
@@ -475,13 +491,13 @@ def extract_xliff(path: str, count_target: bool = False) -> Tuple[str, Optional[
                     segments.extend(_extract_mrk_segments(src, ns))
 
         if not segments:
-            return "", f"No {counting} segments found in XLIFF"
+            return ExtractionResult("", f"No {counting} segments found in XLIFF")
         note = f"XLIFF {counting} [{lang_label}]"
-        return "\n".join(segments), note
+        return ExtractionResult("\n".join(segments), note, segments)
     except Exception as e:
-        return "", f"XLIFF error: {e}"
+        return ExtractionResult("", f"XLIFF error: {e}")
 
-def extract_tmx(path: str) -> Tuple[str, Optional[str]]:
+def extract_tmx(path: str) -> ExtractionResult:
     """Extract source segments from TMX files (first language variant per TU)."""
     try:
         tree = ET.parse(path)
@@ -511,12 +527,12 @@ def extract_tmx(path: str) -> Tuple[str, Optional[str]]:
                         segments.append(text)
 
         if not segments:
-            return "", "No source segments found in TMX"
-        return "\n".join(segments), None
+            return ExtractionResult("", "No source segments found in TMX")
+        return ExtractionResult("\n".join(segments), None, segments)
     except Exception as e:
-        return "", f"TMX error: {e}"
+        return ExtractionResult("", f"TMX error: {e}")
 
-def extract_po(path: str) -> Tuple[str, Optional[str]]:
+def extract_po(path: str) -> ExtractionResult:
     """Extract source strings (msgid) from PO/POT files."""
     try:
         with open(path, "r", encoding="utf-8", errors="replace") as f:
@@ -549,10 +565,10 @@ def extract_po(path: str) -> Tuple[str, Optional[str]]:
                 segments.append(text)
 
         if not segments:
-            return "", "No source strings found in PO file"
-        return "\n".join(segments), None
+            return ExtractionResult("", "No source strings found in PO file")
+        return ExtractionResult("\n".join(segments), None, segments)
     except Exception as e:
-        return "", f"PO error: {e}"
+        return ExtractionResult("", f"PO error: {e}")
 
 # Translation format extensions handled by dedicated parsers
 TRANSLATION_EXTS = {".sdlxliff", ".xliff", ".xlf", ".mqxliff", ".tmx", ".po", ".pot"}
@@ -593,15 +609,15 @@ TIKA_EXTS = {
     ".properties", ".strings", ".resx",
 }
 
-def extract_tika(path: str) -> Tuple[str, Optional[str]]:
+def extract_tika(path: str) -> ExtractionResult:
     if not TIKA_OK:
-        return "", "Apache Tika not installed"
+        return ExtractionResult("", "Apache Tika not installed")
     try:
         parsed = tika_parser.from_file(path)
         text = parsed.get("content") or ""
-        return text.strip(), None
+        return ExtractionResult(text.strip(), None)
     except Exception as e:
-        return "", f"Tika error: {e}"
+        return ExtractionResult("", f"Tika error: {e}")
 
 
 # ---------------- Batch + metrics ----------------
@@ -616,6 +632,12 @@ def get_supported_exts(include_pdfs: bool = True) -> set:
     return exts
 
 @dataclass
+class ExtractionResult:
+    text: str
+    note: Optional[str]
+    segments: Optional[List[str]] = None  # individual segments for repetition analysis
+
+@dataclass
 class FileMetrics:
     filepath: str
     words: int
@@ -627,6 +649,30 @@ class FileMetrics:
     pages_est: float
     note: str = ""
     text: str = ""
+    segments: Optional[List[str]] = None  # segments from extraction
+
+@dataclass
+class RepetitionInfo:
+    """Per-file repetition breakdown."""
+    total_segments: int
+    unique_segments: int
+    repeated_segments: int
+    unique_words: int
+    repeated_words: int
+    unique_chars: int
+    repeated_chars: int
+
+@dataclass
+class BatchRepetitionResult:
+    """Corpus-level repetition analysis results."""
+    per_file: Dict[str, RepetitionInfo]
+    corpus_unique_segments: int
+    corpus_total_segments: int
+    corpus_repeated_segments: int
+    corpus_unique_words: int
+    corpus_repeated_words: int
+    corpus_unique_chars: int
+    corpus_repeated_chars: int
 
 def compute_metrics(text: str, s: Settings) -> Tuple[int, int, int, int, int, int, float]:
     w = count_words(text)
@@ -638,7 +684,79 @@ def compute_metrics(text: str, s: Settings) -> Tuple[int, int, int, int, int, in
     pages = (w / s.words_per_page) if s.words_per_page > 0 else 0.0
     return w, c, cns, n, sent, para, pages
 
-def extract_text_by_type(path: str, s: Settings) -> Tuple[str, Optional[str]]:
+def analyze_repetitions(results: List[FileMetrics]) -> BatchRepetitionResult:
+    """Analyze cross-document segment repetitions across all files in a batch.
+
+    First occurrence of each segment = unique, subsequent = repetition.
+    File processing order determines which file 'owns' unique segments.
+    """
+    seen: Dict[str, bool] = {}  # normalized_segment -> True (just presence)
+    per_file: Dict[str, RepetitionInfo] = {}
+
+    corpus_unique_words = 0
+    corpus_repeated_words = 0
+    corpus_unique_chars = 0
+    corpus_repeated_chars = 0
+    corpus_total_segments = 0
+    corpus_repeated_segments = 0
+
+    for fm in results:
+        # Use stored segments for translation formats, sentence-split for others
+        segments = fm.segments if fm.segments is not None else text_to_sentences(fm.text)
+
+        file_unique_segs = 0
+        file_repeated_segs = 0
+        file_unique_words = 0
+        file_repeated_words = 0
+        file_unique_chars = 0
+        file_repeated_chars = 0
+
+        for seg in segments:
+            norm = normalize_segment(seg)
+            if not norm:
+                continue
+
+            seg_words = count_words(seg)
+            seg_chars = count_chars_with_spaces(seg)
+            corpus_total_segments += 1
+
+            if norm in seen:
+                file_repeated_segs += 1
+                file_repeated_words += seg_words
+                file_repeated_chars += seg_chars
+                corpus_repeated_segments += 1
+                corpus_repeated_words += seg_words
+                corpus_repeated_chars += seg_chars
+            else:
+                file_unique_segs += 1
+                file_unique_words += seg_words
+                file_unique_chars += seg_chars
+                corpus_unique_words += seg_words
+                corpus_unique_chars += seg_chars
+                seen[norm] = True
+
+        per_file[fm.filepath] = RepetitionInfo(
+            total_segments=file_unique_segs + file_repeated_segs,
+            unique_segments=file_unique_segs,
+            repeated_segments=file_repeated_segs,
+            unique_words=file_unique_words,
+            repeated_words=file_repeated_words,
+            unique_chars=file_unique_chars,
+            repeated_chars=file_repeated_chars,
+        )
+
+    return BatchRepetitionResult(
+        per_file=per_file,
+        corpus_unique_segments=len(seen),
+        corpus_total_segments=corpus_total_segments,
+        corpus_repeated_segments=corpus_repeated_segments,
+        corpus_unique_words=corpus_unique_words,
+        corpus_repeated_words=corpus_repeated_words,
+        corpus_unique_chars=corpus_unique_chars,
+        corpus_repeated_chars=corpus_repeated_chars,
+    )
+
+def extract_text_by_type(path: str, s: Settings) -> ExtractionResult:
     ext = os.path.splitext(path)[1].lower()
     # Dedicated extractors (with fine-grained settings)
     if ext == ".docx":
@@ -661,7 +779,7 @@ def extract_text_by_type(path: str, s: Settings) -> Tuple[str, Optional[str]]:
     # Tika fallback for all other formats
     if TIKA_OK:
         return extract_tika(path)
-    return "", "Unsupported file type"
+    return ExtractionResult("", "Unsupported file type")
 
 def iter_files(folder: str, include_subfolders: bool, include_pdfs: bool) -> List[str]:
     supported = get_supported_exts(include_pdfs)
@@ -701,6 +819,7 @@ class App(tk.Tk):
         self._queue = queue.Queue()
         self._results: List[FileMetrics] = []
         self._file_list: List[str] = []
+        self._repetition: Optional[BatchRepetitionResult] = None
 
         # --- Settings vars (counting) ---
         self.include_subfolders_var = tk.BooleanVar(value=True)
@@ -729,6 +848,7 @@ class App(tk.Tk):
         # --- Billing vars ---
         self.bill_by_var = tk.StringVar(value="Words")  # Words / Characters / Pages (est.)
         self.rate_var = tk.DoubleVar(value=0.0)
+        self.rep_rate_var = tk.DoubleVar(value=0.0)  # rate for repeated segments (0 = excluded)
         self.currency_var = tk.StringVar(value="GBP")
         self.tax_var = tk.DoubleVar(value=0.0)       # percent
         self.discount_var = tk.DoubleVar(value=0.0)  # percent
@@ -747,7 +867,7 @@ class App(tk.Tk):
             self.pdf_include_var, self.pdf_strip_repeat_var,
             self.xliff_count_target_var,
             self.words_per_page_var,
-            self.bill_by_var, self.rate_var, self.currency_var, self.tax_var, self.discount_var,
+            self.bill_by_var, self.rate_var, self.rep_rate_var, self.currency_var, self.tax_var, self.discount_var,
         ):
             v.trace_add("write", lambda *_: self._save_settings())
 
@@ -776,6 +896,7 @@ class App(tk.Tk):
             "words_per_page": self.words_per_page_var.get(),
             "bill_by": self.bill_by_var.get(),
             "rate": self.rate_var.get(),
+            "rep_rate": self.rep_rate_var.get(),
             "currency": self.currency_var.get(),
             "tax": self.tax_var.get(),
             "discount": self.discount_var.get(),
@@ -828,6 +949,7 @@ class App(tk.Tk):
         _n("words_per_page", self.words_per_page_var)
         _s("bill_by", self.bill_by_var)
         _n("rate", self.rate_var)
+        _n("rep_rate", self.rep_rate_var)
         _s("currency", self.currency_var)
         _n("tax", self.tax_var)
         _n("discount", self.discount_var)
@@ -997,21 +1119,26 @@ class App(tk.Tk):
         ttk.Label(billing, text="Rate:").grid(row=1, column=0, sticky="w", pady=(6, 0))
         ttk.Entry(billing, textvariable=self.rate_var, width=10).grid(row=1, column=1, sticky="w", pady=(6, 0))
 
-        ttk.Label(billing, text="Currency:").grid(row=2, column=0, sticky="w", pady=(6, 0))
-        ttk.Entry(billing, textvariable=self.currency_var, width=10).grid(row=2, column=1, sticky="w", pady=(6, 0))
+        ttk.Label(billing, text="Rep. rate:").grid(row=2, column=0, sticky="w", pady=(6, 0))
+        ttk.Entry(billing, textvariable=self.rep_rate_var, width=10).grid(row=2, column=1, sticky="w", pady=(6, 0))
 
-        ttk.Label(billing, text="Tax %:").grid(row=3, column=0, sticky="w", pady=(6, 0))
-        ttk.Entry(billing, textvariable=self.tax_var, width=10).grid(row=3, column=1, sticky="w", pady=(6, 0))
+        ttk.Label(billing, text="Currency:").grid(row=3, column=0, sticky="w", pady=(6, 0))
+        ttk.Entry(billing, textvariable=self.currency_var, width=10).grid(row=3, column=1, sticky="w", pady=(6, 0))
 
-        ttk.Label(billing, text="Discount %:").grid(row=4, column=0, sticky="w", pady=(6, 0))
-        ttk.Entry(billing, textvariable=self.discount_var, width=10).grid(row=4, column=1, sticky="w", pady=(6, 0))
+        ttk.Label(billing, text="Tax %:").grid(row=4, column=0, sticky="w", pady=(6, 0))
+        ttk.Entry(billing, textvariable=self.tax_var, width=10).grid(row=4, column=1, sticky="w", pady=(6, 0))
 
-        ttk.Separator(billing).grid(row=5, column=0, columnspan=2, sticky="we", pady=10)
+        ttk.Label(billing, text="Discount %:").grid(row=5, column=0, sticky="w", pady=(6, 0))
+        ttk.Entry(billing, textvariable=self.discount_var, width=10).grid(row=5, column=1, sticky="w", pady=(6, 0))
 
-        self.total_billable_var = tk.StringVar(value="Billable units: 0")
+        ttk.Separator(billing).grid(row=6, column=0, columnspan=2, sticky="we", pady=10)
+
+        self.total_billable_var = tk.StringVar(value="Unique units: 0")
+        self.total_rep_billable_var = tk.StringVar(value="Rep. units: 0")
         self.total_amount_var = tk.StringVar(value="Total: 0.00")
-        ttk.Label(billing, textvariable=self.total_billable_var).grid(row=6, column=0, columnspan=2, sticky="w")
-        ttk.Label(billing, textvariable=self.total_amount_var, font=("Segoe UI", 11, "bold")).grid(row=7, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        ttk.Label(billing, textvariable=self.total_billable_var).grid(row=7, column=0, columnspan=2, sticky="w")
+        ttk.Label(billing, textvariable=self.total_rep_billable_var).grid(row=8, column=0, columnspan=2, sticky="w", pady=(2, 0))
+        ttk.Label(billing, textvariable=self.total_amount_var, font=("Segoe UI", 11, "bold")).grid(row=9, column=0, columnspan=2, sticky="w", pady=(4, 0))
 
         # Dependency/status line
         self.status_var = tk.StringVar(value=self._dependency_status())
@@ -1021,11 +1148,14 @@ class App(tk.Tk):
         frame = ttk.Frame(self, padding=10)
         frame.pack(fill="both", expand=True)
 
-        cols = ("words", "chars", "chars_ns", "nums", "nums_pct", "sent", "para", "pages", "note", "path")
+        cols = ("words", "uniq_w", "rep_w", "rep_pct", "chars", "chars_ns", "nums", "nums_pct", "sent", "para", "pages", "note", "path")
         self.tree = ttk.Treeview(frame, columns=cols, show="headings")
 
         headings = {
             "words": "Words",
+            "uniq_w": "Unique",
+            "rep_w": "Repeated",
+            "rep_pct": "% rep.",
             "chars": "Chars",
             "chars_ns": "Chars (no sp)",
             "nums": "Numbers",
@@ -1040,6 +1170,9 @@ class App(tk.Tk):
             self.tree.heading(k, text=h)
 
         self.tree.column("words", width=80, anchor="e")
+        self.tree.column("uniq_w", width=80, anchor="e")
+        self.tree.column("rep_w", width=80, anchor="e")
+        self.tree.column("rep_pct", width=60, anchor="e")
         self.tree.column("chars", width=90, anchor="e")
         self.tree.column("chars_ns", width=110, anchor="e")
         self.tree.column("nums", width=80, anchor="e")
@@ -1061,11 +1194,15 @@ class App(tk.Tk):
         bottom.pack(fill="x")
         self.total_files_var = tk.StringVar(value="Files: 0")
         self.total_words_var = tk.StringVar(value="Total words: 0")
+        self.total_unique_words_var = tk.StringVar(value="")
+        self.total_rep_words_var = tk.StringVar(value="")
         ttk.Label(bottom, textvariable=self.total_files_var).pack(side="left")
         ttk.Label(bottom, textvariable=self.total_words_var).pack(side="left", padx=(16, 0))
+        ttk.Label(bottom, textvariable=self.total_unique_words_var).pack(side="left", padx=(16, 0))
+        ttk.Label(bottom, textvariable=self.total_rep_words_var).pack(side="left", padx=(16, 0))
 
         # Recompute billing when these change
-        for v in (self.bill_by_var, self.rate_var, self.currency_var, self.tax_var, self.discount_var, self.words_per_page_var):
+        for v in (self.bill_by_var, self.rate_var, self.rep_rate_var, self.currency_var, self.tax_var, self.discount_var, self.words_per_page_var):
             v.trace_add("write", lambda *_: self.update_billing())
 
         # Keyboard shortcuts
@@ -1162,9 +1299,7 @@ class App(tk.Tk):
             return
         paths_to_remove = set()
         for item in sel:
-            vals = self.tree.item(item, "values")
-            if vals and len(vals) >= 10:
-                paths_to_remove.add(vals[9])
+            paths_to_remove.add(self.tree.set(item, "path"))
         self._file_list = [p for p in self._file_list if p not in paths_to_remove]
         self.run_count()
 
@@ -1177,12 +1312,16 @@ class App(tk.Tk):
         for item in self.tree.get_children():
             self.tree.delete(item)
         self._results = []
+        self._repetition = None
         self.export_btn.configure(state="disabled")
         self.export_md_btn.configure(state="disabled")
         self.copy_btn.configure(state="disabled")
         self.total_files_var.set("Files: 0")
         self.total_words_var.set("Total words: 0")
-        self.total_billable_var.set("Billable units: 0")
+        self.total_unique_words_var.set("")
+        self.total_rep_words_var.set("")
+        self.total_billable_var.set("Unique units: 0")
+        self.total_rep_billable_var.set("Rep. units: 0")
         self.total_amount_var.set("Total: 0.00")
         self.status_var.set(self._dependency_status())
 
@@ -1219,13 +1358,14 @@ class App(tk.Tk):
         self._queue.put(("meta", len(paths)))
 
         for idx, p in enumerate(paths, start=1):
-            text, note = extract_text_by_type(p, s)
+            result = extract_text_by_type(p, s)
+            text, note, segments = result.text, result.note, result.segments
             if note and not text:
                 # Error: no text could be extracted
                 metrics = FileMetrics(p, 0, 0, 0, 0, 0, 0, 0.0, note)
             else:
                 w, c, cns, n, sent, para, pages = compute_metrics(text, s)
-                metrics = FileMetrics(p, w, c, cns, n, sent, para, pages, note or "", text)
+                metrics = FileMetrics(p, w, c, cns, n, sent, para, pages, note or "", text, segments)
             self._queue.put(("result", metrics, idx, len(paths)))
 
         self._queue.put(("done",))
@@ -1272,6 +1412,10 @@ class App(tk.Tk):
                     self.update_billing()
 
                 elif kind == "done":
+                    # Run cross-document repetition analysis
+                    self._repetition = analyze_repetitions(self._results)
+                    self._update_repetition_columns()
+
                     self.status_var.set(f"Done. {len(self._results)} file(s).")
                     self.run_btn.configure(state="normal")
                     has = "normal" if self._results else "disabled"
@@ -1285,31 +1429,75 @@ class App(tk.Tk):
 
         self.after(100, self._poll_queue)
 
+    def _update_repetition_columns(self):
+        """Retroactively fill repetition columns after analysis completes."""
+        if not self._repetition:
+            return
+        children = self.tree.get_children()
+        for i, item_id in enumerate(children):
+            if i >= len(self._results):
+                break
+            fp = self._results[i].filepath
+            info = self._repetition.per_file.get(fp)
+            if info:
+                self.tree.set(item_id, "uniq_w", str(info.unique_words))
+                self.tree.set(item_id, "rep_w", str(info.repeated_words))
+                total_w = info.unique_words + info.repeated_words
+                pct = (info.repeated_words / total_w * 100.0) if total_w > 0 else 0.0
+                self.tree.set(item_id, "rep_pct", f"{pct:.1f}%")
+
+        rep = self._repetition
+        self.total_unique_words_var.set(f"Unique words: {rep.corpus_unique_words}")
+        self.total_rep_words_var.set(f"Repeated words: {rep.corpus_repeated_words}")
+
     # -------- Billing --------
     def update_billing(self):
         if not self._results:
-            self.total_billable_var.set("Billable units: 0")
+            self.total_billable_var.set("Unique units: 0")
+            self.total_rep_billable_var.set("Rep. units: 0")
             self.total_amount_var.set("Total: 0.00")
             return
 
         bill_by = self.bill_by_var.get()
         rate = float(self.rate_var.get() or 0.0)
+        rep_rate = float(self.rep_rate_var.get() or 0.0)
         tax = float(self.tax_var.get() or 0.0)
         discount = float(self.discount_var.get() or 0.0)
         currency = (self.currency_var.get() or "").strip() or "GBP"
 
-        if bill_by == "Words":
-            units = sum(r.words for r in self._results)
-        elif bill_by == "Characters":
-            units = sum(r.chars for r in self._results)
-        else:  # Pages (est.)
-            units = sum(r.pages_est for r in self._results)
+        if self._repetition:
+            rep = self._repetition
+            if bill_by == "Words":
+                unique_units = rep.corpus_unique_words
+                rep_units = rep.corpus_repeated_words
+            elif bill_by == "Characters":
+                unique_units = rep.corpus_unique_chars
+                rep_units = rep.corpus_repeated_chars
+            else:  # Pages (est.)
+                wpp = int(self.words_per_page_var.get() or 330)
+                if wpp > 0:
+                    unique_units = rep.corpus_unique_words / wpp
+                    rep_units = rep.corpus_repeated_words / wpp
+                else:
+                    unique_units = 0
+                    rep_units = 0
+        else:
+            # Before repetition analysis completes (during incremental loading)
+            if bill_by == "Words":
+                unique_units = sum(r.words for r in self._results)
+            elif bill_by == "Characters":
+                unique_units = sum(r.chars for r in self._results)
+            else:
+                unique_units = sum(r.pages_est for r in self._results)
+            rep_units = 0
 
-        subtotal = units * rate
+        subtotal = (unique_units * rate) + (rep_units * rep_rate)
         subtotal_after_discount = subtotal * (1.0 - (discount / 100.0))
         total = subtotal_after_discount * (1.0 + (tax / 100.0))
 
-        self.total_billable_var.set(f"Billable units: {units:.2f}" if isinstance(units, float) else f"Billable units: {units}")
+        fmt = lambda v: f"{v:.2f}" if isinstance(v, float) else str(v)
+        self.total_billable_var.set(f"Unique units: {fmt(unique_units)}")
+        self.total_rep_billable_var.set(f"Rep. units: {fmt(rep_units)}")
         self.total_amount_var.set(f"Total: {currency} {total:.2f}")
 
     # -------- Export --------
@@ -1328,9 +1516,17 @@ class App(tk.Tk):
         rows = []
         for r in self._results:
             nums_pct = (r.numbers / r.words * 100.0) if r.words else 0.0
+            info = self._repetition.per_file.get(r.filepath) if self._repetition else None
+            rep_pct = ""
+            if info:
+                total_w = info.unique_words + info.repeated_words
+                rep_pct = f"{info.repeated_words / total_w * 100:.1f}%" if total_w > 0 else "0.0%"
             rows.append({
                 "file": os.path.basename(r.filepath),
                 "words": str(r.words),
+                "uniq": str(info.unique_words) if info else "",
+                "rep": str(info.repeated_words) if info else "",
+                "rep_pct": rep_pct,
                 "chars": str(r.chars),
                 "chars_ns": str(r.chars_nospace),
                 "nums": str(r.numbers),
@@ -1347,6 +1543,9 @@ class App(tk.Tk):
         cols = [
             ("file", "File", file_width, "l"),
             ("words", "Words", 8, "r"),
+            ("uniq", "Unique", 8, "r"),
+            ("rep", "Rep.", 8, "r"),
+            ("rep_pct", "%Rep", 6, "r"),
             ("chars", "Chars", 8, "r"),
             ("chars_ns", "NoSp", 8, "r"),
             ("nums", "Nums", 6, "r"),
@@ -1373,18 +1572,32 @@ class App(tk.Tk):
         total_pages = sum(r.pages_est for r in self._results)
 
         bill_by = self.bill_by_var.get()
-        if bill_by == "Words":
-            units = sum(r.words for r in self._results)
-        elif bill_by == "Characters":
-            units = sum(r.chars for r in self._results)
-        else:
-            units = sum(r.pages_est for r in self._results)
-
         rate = float(self.rate_var.get() or 0.0)
+        rep_rate = float(self.rep_rate_var.get() or 0.0)
         tax = float(self.tax_var.get() or 0.0)
         discount = float(self.discount_var.get() or 0.0)
         currency = (self.currency_var.get() or "").strip() or "GBP"
-        subtotal = units * rate
+
+        if self._repetition:
+            rep = self._repetition
+            if bill_by == "Words":
+                unique_units, rep_units = rep.corpus_unique_words, rep.corpus_repeated_words
+            elif bill_by == "Characters":
+                unique_units, rep_units = rep.corpus_unique_chars, rep.corpus_repeated_chars
+            else:
+                wpp = int(self.words_per_page_var.get() or 330)
+                unique_units = rep.corpus_unique_words / wpp if wpp > 0 else 0
+                rep_units = rep.corpus_repeated_words / wpp if wpp > 0 else 0
+        else:
+            if bill_by == "Words":
+                unique_units = sum(r.words for r in self._results)
+            elif bill_by == "Characters":
+                unique_units = sum(r.chars for r in self._results)
+            else:
+                unique_units = sum(r.pages_est for r in self._results)
+            rep_units = 0
+
+        subtotal = (unique_units * rate) + (rep_units * rep_rate)
         subtotal_after_discount = subtotal * (1.0 - (discount / 100.0))
         total = subtotal_after_discount * (1.0 + (tax / 100.0))
 
@@ -1400,13 +1613,31 @@ class App(tk.Tk):
             f"Total words: {total_words}",
             f"Total chars: {total_chars}",
             f"Total pages (est.): {total_pages:.2f}",
-            f"Billing: {bill_by} | Rate {currency} {rate:.4f} | Discount {discount:.2f}% | Tax {tax:.2f}%",
+        ]
+
+        if self._repetition:
+            rep = self._repetition
+            lines.extend([
+                "",
+                f"Repetition analysis:",
+                f"  Unique words: {rep.corpus_unique_words}  ({rep.corpus_unique_segments} segments)",
+                f"  Repeated words: {rep.corpus_repeated_words}  ({rep.corpus_repeated_segments} segments)",
+                f"  Distinct segments: {rep.corpus_unique_segments}  Total segments: {rep.corpus_total_segments}",
+            ])
+
+        unique_label = f"Unique units: {unique_units:.2f}" if isinstance(unique_units, float) else f"Unique units: {unique_units}"
+        rep_label = f"Rep. units: {rep_units:.2f}" if isinstance(rep_units, float) else f"Rep. units: {rep_units}"
+        lines.extend([
+            "",
+            f"Billing: {bill_by} | Rate {currency} {rate:.4f} | Rep. rate {currency} {rep_rate:.4f} | Discount {discount:.2f}% | Tax {tax:.2f}%",
+            unique_label,
+            rep_label,
             f"Total amount: {currency} {total:.2f}",
             "",
             "=" * 60,
             "DOCUMENT CONTENTS",
             "=" * 60,
-        ]
+        ])
 
         for r in self._results:
             fname = os.path.basename(r.filepath)
@@ -1447,18 +1678,33 @@ class App(tk.Tk):
             with open(out, "w", newline="", encoding="utf-8") as f:
                 w = csv.writer(f)
                 w.writerow([
-                    "file", "words", "chars", "chars_no_spaces", "numbers", "sentences",
+                    "file", "words", "unique_words", "repeated_words", "rep_pct",
+                    "chars", "chars_no_spaces", "numbers", "sentences",
                     "paragraphs", "pages_est", "note"
                 ])
                 for r in self._results:
-                    w.writerow([r.filepath, r.words, r.chars, r.chars_nospace, r.numbers,
+                    info = self._repetition.per_file.get(r.filepath) if self._repetition else None
+                    uw = info.unique_words if info else ""
+                    rw = info.repeated_words if info else ""
+                    total_w = (info.unique_words + info.repeated_words) if info else 0
+                    rp = f"{info.repeated_words / total_w * 100:.1f}%" if info and total_w > 0 else ""
+                    w.writerow([r.filepath, r.words, uw, rw, rp, r.chars, r.chars_nospace, r.numbers,
                                 r.sentences, r.paragraphs, f"{r.pages_est:.2f}", r.note])
 
                 w.writerow([])
                 total_words = sum(r.words for r in self._results)
                 total_chars = sum(r.chars for r in self._results)
                 total_pages = sum(r.pages_est for r in self._results)
-                w.writerow(["TOTALS", total_words, total_chars, "", "", "", "", f"{total_pages:.2f}", ""])
+                w.writerow(["TOTALS", total_words, "", "", "", total_chars, "", "", "", "", f"{total_pages:.2f}", ""])
+
+                if self._repetition:
+                    rep = self._repetition
+                    w.writerow([])
+                    w.writerow(["REPETITION SUMMARY"])
+                    w.writerow(["Unique words", rep.corpus_unique_words])
+                    w.writerow(["Repeated words", rep.corpus_repeated_words])
+                    w.writerow(["Distinct segments", rep.corpus_unique_segments])
+                    w.writerow(["Total segments", rep.corpus_total_segments])
 
             messagebox.showinfo("Exported", f"Saved:\n{out}")
         except Exception as e:
@@ -1473,18 +1719,32 @@ class App(tk.Tk):
         total_pages = sum(r.pages_est for r in self._results)
 
         bill_by = self.bill_by_var.get()
-        if bill_by == "Words":
-            units = sum(r.words for r in self._results)
-        elif bill_by == "Characters":
-            units = sum(r.chars for r in self._results)
-        else:
-            units = sum(r.pages_est for r in self._results)
-
         rate = float(self.rate_var.get() or 0.0)
+        rep_rate = float(self.rep_rate_var.get() or 0.0)
         tax = float(self.tax_var.get() or 0.0)
         discount = float(self.discount_var.get() or 0.0)
         currency = (self.currency_var.get() or "").strip() or "GBP"
-        subtotal = units * rate
+
+        if self._repetition:
+            rep = self._repetition
+            if bill_by == "Words":
+                unique_units, rep_units = rep.corpus_unique_words, rep.corpus_repeated_words
+            elif bill_by == "Characters":
+                unique_units, rep_units = rep.corpus_unique_chars, rep.corpus_repeated_chars
+            else:
+                wpp = int(self.words_per_page_var.get() or 330)
+                unique_units = rep.corpus_unique_words / wpp if wpp > 0 else 0
+                rep_units = rep.corpus_repeated_words / wpp if wpp > 0 else 0
+        else:
+            if bill_by == "Words":
+                unique_units = sum(r.words for r in self._results)
+            elif bill_by == "Characters":
+                unique_units = sum(r.chars for r in self._results)
+            else:
+                unique_units = sum(r.pages_est for r in self._results)
+            rep_units = 0
+
+        subtotal = (unique_units * rate) + (rep_units * rep_rate)
         subtotal_after_discount = subtotal * (1.0 - (discount / 100.0))
         total = subtotal_after_discount * (1.0 + (tax / 100.0))
 
@@ -1495,15 +1755,20 @@ class App(tk.Tk):
             f"",
             f"## Summary",
             f"",
-            f"| File | Words | Chars | Chars (no sp) | Numbers | % nums | Sent. | Para. | Pages (est.) | Note |",
-            f"|------|------:|------:|--------------:|--------:|-------:|------:|------:|-------------:|------|",
+            f"| File | Words | Unique | Repeated | % Rep | Chars | Chars (no sp) | Numbers | % nums | Sent. | Para. | Pages (est.) | Note |",
+            f"|------|------:|-------:|---------:|------:|------:|--------------:|--------:|-------:|------:|------:|-------------:|------|",
         ]
 
         for r in self._results:
             nums_pct = (r.numbers / r.words * 100.0) if r.words else 0.0
             fname = os.path.basename(r.filepath)
+            info = self._repetition.per_file.get(r.filepath) if self._repetition else None
+            uw = str(info.unique_words) if info else ""
+            rw = str(info.repeated_words) if info else ""
+            tw = (info.unique_words + info.repeated_words) if info else 0
+            rp = f"{info.repeated_words / tw * 100:.1f}%" if info and tw > 0 else ""
             lines.append(
-                f"| {fname} | {r.words} | {r.chars} | {r.chars_nospace} "
+                f"| {fname} | {r.words} | {uw} | {rw} | {rp} | {r.chars} | {r.chars_nospace} "
                 f"| {r.numbers} | {nums_pct:.2f}% | {r.sentences} | {r.paragraphs} "
                 f"| {r.pages_est:.2f} | {r.note} |"
             )
@@ -1514,10 +1779,27 @@ class App(tk.Tk):
             f"**Total words:** {total_words}  ",
             f"**Total chars:** {total_chars}  ",
             f"**Total pages (est.):** {total_pages:.2f}",
+        ])
+
+        if self._repetition:
+            rep = self._repetition
+            lines.extend([
+                f"",
+                f"### Repetition Analysis",
+                f"",
+                f"- Unique words: {rep.corpus_unique_words} ({rep.corpus_unique_segments} segments)",
+                f"- Repeated words: {rep.corpus_repeated_words} ({rep.corpus_repeated_segments} segments)",
+                f"- Distinct segments: {rep.corpus_unique_segments} | Total segments: {rep.corpus_total_segments}",
+            ])
+
+        unique_label = f"{unique_units:.2f}" if isinstance(unique_units, float) else str(unique_units)
+        rep_label = f"{rep_units:.2f}" if isinstance(rep_units, float) else str(rep_units)
+        lines.extend([
             f"",
             f"### Billing",
             f"",
-            f"- Bill by: {bill_by} | Rate: {currency} {rate:.4f} | Discount: {discount:.2f}% | Tax: {tax:.2f}%",
+            f"- Bill by: {bill_by} | Rate: {currency} {rate:.4f} | Rep. rate: {currency} {rep_rate:.4f} | Discount: {discount:.2f}% | Tax: {tax:.2f}%",
+            f"- Unique units: {unique_label} | Rep. units: {rep_label}",
             f"- **Total amount: {currency} {total:.2f}**",
             f"",
             f"---",

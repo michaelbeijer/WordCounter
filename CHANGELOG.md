@@ -2,6 +2,26 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.6.0] - 2026-03-06
+
+### Added
+- Cross-document repetition analysis: detects identical segments across all files in a batch.
+  - First occurrence of each segment counted as "unique" (full rate); subsequent occurrences flagged as "repetitions" (reduced or zero rate).
+  - Works both across documents and within a single document.
+  - Translation formats (SDLXLIFF, XLIFF, TMX, PO) use native segment boundaries; other formats fall back to sentence splitting.
+- Three new columns in the results table: Unique words, Repeated words, % repetitions (per file).
+- Repetition totals in the bottom status bar (unique words / repeated words).
+- Repetition rate field in the billing panel: set to 0 to exclude repetitions from billing, or set a reduced per-unit rate.
+- Billing formula updated: `(unique_units × rate) + (rep_units × rep_rate)`, then discount and tax.
+- Repetition data included in all export formats (CSV, Markdown, clipboard report).
+
+### Changed
+- All extractors now return an `ExtractionResult` dataclass (text + note + segments list).
+- `FileMetrics` extended with optional `segments` field.
+- Billing panel labels updated from "Billable units" to "Unique units" / "Rep. units" split.
+- `remove_selected()` uses column-name lookup instead of hard-coded index (more robust).
+- Version bumped to 0.6.0.
+
 ## [0.5.0] - 2026-03-06
 
 ### Added
